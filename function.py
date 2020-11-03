@@ -1,10 +1,10 @@
 import time
 import logging
-
+import copy
 import torch
 import numpy as np
-
-
+from torch.autograd import Variable
+import os
 logger = logging.getLogger(__name__)
 
 
@@ -122,7 +122,7 @@ def validate(config, val_loader, model, criterion, output_dir, tb_log_dir,
 
     return top1.avg
 
-def evaluate(model,result):
+def evaluate(model,query_loader,gallery_loader,query_cam,query_label,gallery_cam,gallery_label):
     """
     this function we get a model,and we use the query prope to query a list form the gallery.
     we will use mAP, and cmc score .
@@ -131,13 +131,18 @@ def evaluate(model,result):
         result:a dict include the featrue ,camera, information and label from query and gallery
     :return: mAP and cmc score
     """
-    #干脆在这里边把提取特征的写了，这里不需要存字典了， 直接提取特征之后就到了这里
-    query_feature = torch.FloatTensor(result['query_f'])
-    query_cam = result['query_cam'][0]
-    query_label = result['query_label'][0]
-    gallery_feature = torch.FloatTensor(result['gallery_f'])
-    gallery_cam = result['gallery_cam'][0]
-    gallery_label = result['gallery_label'][0]
+    #first we need to remove the last layer of model
+    print(model)
+    model_modify = copy.deepcopy(model)
+    #这里应该把模型拷贝过来 下面的写法会改变模型 ，错误写法
+    model_modify.module.fc = torch.nn.Sequential()
+    print(model_modify)
+    with torch.no_grad():
+        gallery_feature = extract_feature(model, gallery_loader)
+        query_feature = extract_feature(model, query_loader)
+
+    # query_feature = torch.FloatTensor(result['query_f'])
+    # gallery_feature = torch.FloatTensor(result['gallery_f'])
 
     print(query_feature.shape)
     CMC = torch.IntTensor(len(gallery_label)).zero_()
@@ -155,7 +160,7 @@ def evaluate(model,result):
     CMC = CMC.float()
     CMC = CMC/len(query_label) #average CMC
     print('Rank@1:%f Rank@5:%f Rank@10:%f mAP:%f'%(CMC[0],CMC[4],CMC[9],ap/len(query_label)))
-
+    return CMC[0]/len(query_label)
 
 def cal_ap_cmc(query_featrue, query_label, query_cam, gallery_feature, gallery_label, gallery_cam):
     query = query_featrue.view(-1, 1)
@@ -225,6 +230,53 @@ def accuracy(output, target, topk=(1,)):
             correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
+
+def extract_feature(model,dataloaders):
+    features = torch.FloatTensor()
+    count = 0
+    for data in dataloaders:
+        img, label = data
+        n, c, h, w = img.size()
+        count += n
+        #this 512 should be modified as a config parameter
+        # this part include flip img and
+        # ff = torch.FloatTensor(n,512).zero_().cuda()
+        # for i in range(2):
+        #     if(i==1):
+        #         img = fliplr(img)
+        #     input_img = Variable(img.cuda())
+        #     for scale in ms:
+        #         if scale != 1:
+        #             # bicubic is only  available in pytorch>= 1.1
+        #             input_img = nn.functional.interpolate(input_img, scale_factor=scale, mode='bicubic', align_corners=False)
+        #         outputs = model(input_img)
+        #         ff += outputs
+        input_img = Variable(img.cuda())
+        outputs = model(input_img)
+        # norm feature
+
+        #归一化  a.b = |a|*|b|cos(theta) if norm(a) ,|a|=1,so a.b=cos(theta)
+        fnorm = torch.norm(outputs, p=2, dim=1, keepdim=True)
+        outputs = outputs.div(fnorm.expand_as(outputs))
+
+        features = torch.cat((features,outputs.data.cpu()), 0)
+    return features
+
+def get_id(img_path):
+    camera_id = []
+    labels = []
+    for path, v in img_path:
+        #filename = path.split('/')[-1]
+        filename = os.path.basename(path)
+        label = filename[0:4]
+        camera = filename.split('c')[1]
+        if label[0:2]=='-1':
+            labels.append(-1)
+        else:
+            labels.append(int(label))
+        camera_id.append(int(camera[0]))
+    return camera_id, labels
+
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""

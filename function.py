@@ -142,7 +142,7 @@ def evaluate(model,query_loader,gallery_loader,query_cam,query_label,gallery_cam
     # query_feature = torch.FloatTensor(result['query_f'])
     # gallery_feature = torch.FloatTensor(result['gallery_f'])
 
-    print(query_feature.shape)
+    # print(query_feature.shape)
     CMC = torch.IntTensor(len(gallery_label)).zero_()
     ap = 0.0
     for i in range(len(query_label)):

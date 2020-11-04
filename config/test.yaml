@@ -20,6 +20,8 @@ DATASET:
   ROOT: '/data/jinziqi/Market/pytorch'
   TEST_SET: 'val'
   TRAIN_SET: 'train'
+  QUERY: 'query'
+  GALLERY: 'gallery'
 TEST:
   BATCH_SIZE_PER_GPU: 32
   MODEL_FILE: ''

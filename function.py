@@ -132,14 +132,12 @@ def evaluate(model,query_loader,gallery_loader,query_cam,query_label,gallery_cam
     :return: mAP and cmc score
     """
     #first we need to remove the last layer of model
-    print(model)
     model_modify = copy.deepcopy(model)
     #这里应该把模型拷贝过来 下面的写法会改变模型 ，错误写法
     model_modify.module.fc = torch.nn.Sequential()
-    print(model_modify)
     with torch.no_grad():
-        gallery_feature = extract_feature(model, gallery_loader)
-        query_feature = extract_feature(model, query_loader)
+        gallery_feature = extract_feature(model_modify, gallery_loader)
+        query_feature = extract_feature(model_modify, query_loader)
 
     # query_feature = torch.FloatTensor(result['query_f'])
     # gallery_feature = torch.FloatTensor(result['gallery_f'])
@@ -147,7 +145,6 @@ def evaluate(model,query_loader,gallery_loader,query_cam,query_label,gallery_cam
     print(query_feature.shape)
     CMC = torch.IntTensor(len(gallery_label)).zero_()
     ap = 0.0
-    #print(query_label)
     for i in range(len(query_label)):
         ap_tmp, CMC_tmp = cal_ap_cmc(query_feature[i],query_label[i],query_cam[i],gallery_feature,gallery_label,gallery_cam)
         if CMC_tmp[0]==-1:
@@ -173,9 +170,16 @@ def cal_ap_cmc(query_featrue, query_label, query_cam, gallery_feature, gallery_l
     index = index[::-1]
     # index = index[0:2000]
     # good index
-    query_index = np.argwhere(gallery_label == query_label)
-    camera_index = np.argwhere(gallery_cam == query_cam)
+    # print(gallery_label,'gallery label')
+    # print(query_label,'query label')
+    # print(len(gallery_label))
+    # print(len(query_label))
+    # print(type(gallery_label))
+    #gallerlabel and query label 应该是等长的 ，tensor 和ndarray 都可以使用np.argwhere,因为label是个list
+    query_index = np.argwhere(np.array(gallery_label) == query_label)
+    camera_index = np.argwhere(np.array(gallery_cam) == query_cam)
     # setdiff1d即找出不同camera 中的正确的index，相同的不算good index，为什么呢
+    # print(query_index,camera_index,'qeruy index and carmera')
     good_index = np.setdiff1d(query_index, camera_index, assume_unique=True)
     junk_index1 = np.argwhere(gallery_label == -1)
     # intersect1d 返回相同元素

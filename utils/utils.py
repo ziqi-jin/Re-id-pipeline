@@ -62,8 +62,6 @@ def get_optimizer(cfg, model):
     if cfg.TRAIN.OPTIMIZER == 'sgd':
         ignored_params = list(map(id, model.module.classifier.parameters()))
         base_params = filter(lambda p: id(p) not in ignored_params, model.module.parameters())
-        print(len(list(model.parameters())))
-        print(len(list(model.module.parameters())))
         optimizer = optim.SGD([
             {'params': base_params, 'lr': 0.1 * cfg.TRAIN.LR},
             {'params': model.module.classifier.parameters(), 'lr': cfg.TRAIN.LR}

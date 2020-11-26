@@ -131,41 +131,21 @@ def evaluate(model,query_loader,gallery_loader,query_cam,query_label,gallery_cam
         result:a dict include the featrue ,camera, information and label from query and gallery
     :return: mAP and cmc score
     """
-    print(len(gallery_label))
-    print(len(gallery_cam))
-    print(len(query_cam))
-    print(len(query_label))
     #first we need to remove the last layer of model
     # print(model)
-    # model_modify = copy.deepcopy(model)
-    # model_modify.eval()
-    # print(id(model))
-    # print(id(model_modify))
-    # print(model_modify)
-    #这里应该把模型拷贝过来 下面的写法会改变模型 ，错误写法
-    # model_modify.module.classifier.classifier = torch.nn.Sequential()
-    model.classifier.classifier = torch.nn.Sequential()
-    model.eval()
-    model_modify = model.cuda()
-    print(model)
+    model_modify = copy.deepcopy(model)
+    model_modify.module.classifier.classifier = torch.nn.Sequential()
+    model_modify.eval()
+    model_modify = model_modify.cuda()
 
     with torch.no_grad():
         gallery_feature = extract_feature(model_modify, gallery_loader)
         query_feature = extract_feature(model_modify, query_loader)
-        print(gallery_feature.shape)
-        print(query_feature.shape)
-
-    # print('evaluate queryf',query_feature[0])
-    # print('evaluate galleryf',gallery_feature[0])
-    # query_feature = torch.FloatTensor(result['query_f'])
-    # gallery_feature = torch.FloatTensor(result['gallery_f'])
 
     # print(query_feature.shape)
     CMC = torch.IntTensor(len(gallery_label)).zero_()
     ap = 0.0
-    print('len query label',len(query_label))
     flag=0
-    print(query_feature[0][:10])
     for i in range(len(query_label)):
         ap_tmp, CMC_tmp = cal_ap_cmc(query_feature[i],query_label[i],query_cam[i],gallery_feature,gallery_label,gallery_cam)
         if CMC_tmp[0]==-1:
@@ -173,7 +153,6 @@ def evaluate(model,query_loader,gallery_loader,query_cam,query_label,gallery_cam
         #计数
         CMC = CMC + CMC_tmp
         ap += ap_tmp
-        #print(i, CMC_tmp[0])
 
     CMC = CMC.float()
     CMC = CMC/len(query_label) #average CMC
@@ -181,12 +160,6 @@ def evaluate(model,query_loader,gallery_loader,query_cam,query_label,gallery_cam
     return CMC[0]/len(query_label)
 
 def cal_ap_cmc(query_featrue, query_label, query_cam, gallery_feature, gallery_label, gallery_cam):
-    print(query_featrue[:10])
-    print(query_label)
-    print(query_cam)
-    print(gallery_feature[0][:10])
-    print(gallery_label[0:10])
-    print(gallery_cam[:10])
     query = query_featrue.view(-1, 1)
     # print(query.shape)
     score = torch.mm(gallery_feature, query)
@@ -195,36 +168,21 @@ def cal_ap_cmc(query_featrue, query_label, query_cam, gallery_feature, gallery_l
     # predict index
     index = np.argsort(score)  # from small to large
     index = index[::-1]
-    print('index',index)
-    # index = index[0:2000]
-    # good index
-    # print(gallery_label,'gallery label')
-    # print(query_label,'query label')
-    # print(len(gallery_label))
-    # print(len(query_label))
-    # print(type(gallery_label))
+
     #gallerlabel and query label 应该是等长的 ，tensor 和ndarray 都可以使用np.argwhere,因为label是个list
     query_index = np.argwhere(np.array(gallery_label) == query_label)
     camera_index = np.argwhere(np.array(gallery_cam) == query_cam)
-    print('query_index',query_index)
-    print('camera_index',camera_index)
+
     # setdiff1d即找出不同camera 中的正确的index，相同的不算good index，为什么呢
     # print(query_index,camera_index,'qeruy index and carmera')
     good_index = np.setdiff1d(query_index, camera_index, assume_unique=True)
-    print('type gl',type(gallery_label))
-    print('gallery label',np.array(gallery_label))
     junk_index1 = np.argwhere(np.array(gallery_label) == -1)
-    print('junk1',junk_index1)
-
     # intersect1d 返回相同元素
     junk_index2 = np.intersect1d(query_index, camera_index)
-    print('junk2',junk_index2)
 
     junk_index = np.append(junk_index2, junk_index1)  # .flatten())
-    print('junk',junk_index)
 
     CMC_tmp = compute_mAP_cmc(index, good_index, junk_index)
-    print(CMC_tmp)
     return CMC_tmp
 
 def compute_mAP_cmc(index, good_index, junk_index):

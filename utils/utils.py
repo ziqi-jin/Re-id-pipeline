@@ -9,6 +9,15 @@ import torch
 import torch.optim as optim
 from function import get_id
 def create_logger(cfg, cfg_name, phase='train'):
+    '''
+    :param cfg:the config file include all the training parameters
+    :param cfg_name: the name of cfg_name e.g. path/to/test.yaml,
+    :param phase: it is a flag which will be used when create a log file and give it a name
+    :return:
+        logger :logger can record log files
+        final_output_dir : the dir which save log file
+        tensorboard_log_dir : the dir which save tesnsorboard log file
+    '''
     root_output_dir = Path(cfg.OUTPUT_DIR)
     # set up logger
     if not root_output_dir.exists():
@@ -44,16 +53,29 @@ def create_logger(cfg, cfg_name, phase='train'):
 
 
 def get_optimizer(cfg, model):
+    '''
+    :param cfg: config file
+    :param model: model you want to train
+    :return: a optimizer which is required in cfg file
+    '''
     optimizer = None
     if cfg.TRAIN.OPTIMIZER == 'sgd':
-        optimizer = optim.SGD(
-            #model.parameters(),
-            filter(lambda p: p.requires_grad, model.parameters()),
-            lr=cfg.TRAIN.LR,
-            momentum=cfg.TRAIN.MOMENTUM,
-            weight_decay=cfg.TRAIN.WD,
-            nesterov=cfg.TRAIN.NESTEROV
-        )
+        ignored_params = list(map(id, model.module.classifier.parameters()))
+        base_params = filter(lambda p: id(p) not in ignored_params, model.module.parameters())
+        print(len(list(model.parameters())))
+        print(len(list(model.module.parameters())))
+        optimizer = optim.SGD([
+            {'params': base_params, 'lr': 0.1 * cfg.TRAIN.LR},
+            {'params': model.module.classifier.parameters(), 'lr': cfg.TRAIN.LR}
+        ], weight_decay=5e-4, momentum=0.9, nesterov=True)
+        # optimizer = optim.SGD(
+        #     #model.parameters(),
+        #     filter(lambda p: p.requires_grad, model.parameters()),
+        #     lr=cfg.TRAIN.LR,
+        #     momentum=cfg.TRAIN.MOMENTUM,
+        #     weight_decay=cfg.TRAIN.WD,
+        #     nesterov=cfg.TRAIN.NESTEROV
+        # )
     elif cfg.TRAIN.OPTIMIZER == 'adam':
         optimizer = optim.Adam(
             #model.parameters(),
@@ -73,6 +95,11 @@ def get_optimizer(cfg, model):
     return optimizer
 
 def get_all_about_data(config):
+    '''
+    this function can give you all the dataloaders you will use
+    :param config: config file
+    :return: train ,valid ,query ,gallery dataloaders
+    '''
     gpus = list(config.GPUS)
     traindir = os.path.join(config.DATASET.ROOT, config.DATASET.TRAIN_SET)
     valdir = os.path.join(config.DATASET.ROOT, config.DATASET.TEST_SET)
@@ -115,7 +142,6 @@ def get_all_about_data(config):
         batch_size=config.TEST.BATCH_SIZE_PER_GPU * len(gpus),
         shuffle=False,
         num_workers=config.WORKERS,
-        pin_memory=True
     )
     query_dataset = datasets.ImageFolder(query_dir, transforms.Compose(transform_val_list))
     query_loader = torch.utils.data.DataLoader(

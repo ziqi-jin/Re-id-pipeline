@@ -2,11 +2,13 @@ import time
 import logging
 import copy
 import torch
+import torch.nn as nn
 import numpy as np
+from models.models import PCB_test
 from torch.autograd import Variable
 import os
 logger = logging.getLogger(__name__)
-
+from tqdm import tqdm
 
 def train(config, train_loader, model, criterion, optimizer, epoch,
           output_dir, tb_log_dir, writer_dict):
@@ -29,9 +31,22 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
         input = input.cuda()
         target = target.cuda()
         output = model(input)
-        target = target.cuda(non_blocking=True)
+        if not config.MODEL.PCB:
+            _,preds = torch.max(output.data,1)
+            loss = criterion(output, target)
+        else:
+            part = {}
+            sm = nn.Softmax(dim=1)
+            num_part = 6
+            for i in range(num_part):
+                part[i] = output[i]
+            score = sm(part[0]) + sm(part[1]) +sm(part[2]) + sm(part[3]) +sm(part[4]) +sm(part[5])
+            _,preds = torch.max(score.data,1)
+            
+            loss = criterion(part[0], target)
+            for i in range(num_part-1):
+                loss += criterion(part[i+1], target)
 
-        loss = criterion(output, target)
 
         # compute gradient and do update step
         optimizer.zero_grad()
@@ -40,9 +55,10 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
 
         # measure accuracy and record loss
         losses.update(loss.item(), input.size(0))
-
-        prec1, prec5 = accuracy(output, target, (1, 5))
-
+        if not config.MODEL.PCB:
+            prec1, prec5 = accuracy(output, target, (1, 5))
+        else:
+            prec1, prec5 = accuracy(score, target, (1, 5))
         top1.update(prec1[0], input.size(0))
         top5.update(prec5[0], input.size(0))
 
@@ -88,14 +104,27 @@ def validate(config, val_loader, model, criterion, output_dir, tb_log_dir,
             input = input.cuda()
             target = target.cuda()
             output = model(input)
+            if not config.MODEL.PCB:
+                loss = criterion(output, target)
+            else:
+                part = {}
+                sm = nn.Softmax(dim=1)
+                num_part = 6
+                for i in range(num_part):
+                    part[i] = output[i]     
+                score = sm(part[0]) + sm(part[1]) +sm(part[2]) + sm(part[3]) +sm(part[4]) +sm(part[5])
+                loss = criterion(part[0], target)
+                for i in range(num_part-1):
+                    loss += criterion(part[i+1], target)           
+            # target = target.cuda(non_blocking=True)
 
-            target = target.cuda(non_blocking=True)
-
-            loss = criterion(output, target)
 
             # measure accuracy and record loss
             losses.update(loss.item(), input.size(0))
-            prec1, prec5 = accuracy(output, target, (1, 5))
+            if not config.MODEL.PCB:
+                prec1, prec5 = accuracy(output, target, (1, 5))
+            else:
+                prec1, prec5 = accuracy(score, target, (1, 5))
             top1.update(prec1[0], input.size(0))
             top5.update(prec5[0], input.size(0))
 
@@ -122,7 +151,7 @@ def validate(config, val_loader, model, criterion, output_dir, tb_log_dir,
 
     return top1.avg
 
-def evaluate(model,query_loader,gallery_loader,query_cam,query_label,gallery_cam,gallery_label):
+def evaluate(cfg,model,query_loader,gallery_loader,query_cam,query_label,gallery_cam,gallery_label):
     """
     this function we get a model,and we use the query prope to query a list form the gallery.
     we will use mAP, and cmc score .
@@ -133,8 +162,16 @@ def evaluate(model,query_loader,gallery_loader,query_cam,query_label,gallery_cam
     """
     #first we need to remove the last layer of model
     # print(model)
+    global config
+    config = cfg
+
     model_modify = copy.deepcopy(model)
-    model_modify.module.classifier.classifier = torch.nn.Sequential()
+    if config.MODEL.PCB:
+        print(model_modify)
+        print('##############################################')
+        model_modify = PCB_test(model_modify)
+    else:
+        model_modify.module.classifier.classifier = torch.nn.Sequential()
     model_modify.eval()
     model_modify = model_modify.cuda()
 
@@ -146,7 +183,7 @@ def evaluate(model,query_loader,gallery_loader,query_cam,query_label,gallery_cam
     CMC = torch.IntTensor(len(gallery_label)).zero_()
     ap = 0.0
     flag=0
-    for i in range(len(query_label)):
+    for i in tqdm(range(len(query_label))):
         ap_tmp, CMC_tmp = cal_ap_cmc(query_feature[i],query_label[i],query_cam[i],gallery_feature,gallery_label,gallery_cam)
         if CMC_tmp[0]==-1:
             continue
@@ -234,10 +271,14 @@ def accuracy(output, target, topk=(1,)):
 def extract_feature(model,dataloaders):
     features = torch.FloatTensor()
     count = 0
-    for data in dataloaders:
+    for data in tqdm(dataloaders):
         img, label = data
         n, c, h, w = img.size()
         count += n
+        outputs = torch.FloatTensor(n,512).zero_().cuda()
+        if config.MODEL.PCB:
+            outputs = torch.FloatTensor(n,2048,6).zero_().cuda() # we have six parts
+        
         #this 512 should be modified as a config parameter
         # this part include flip img and
         # ff = torch.FloatTensor(n,512).zero_().cuda()
@@ -257,8 +298,14 @@ def extract_feature(model,dataloaders):
         # norm feature
 
         #归一化  a.b = |a|*|b|cos(theta) if norm(a) ,|a|=1,so a.b=cos(theta)
-        fnorm = torch.norm(outputs, p=2, dim=1, keepdim=True)
-        outputs = outputs.div(fnorm.expand_as(outputs))
+        if config.MODEL.PCB:
+            fnorm = torch.norm(outputs, p=2, dim=1, keepdim=True)*np.sqrt(6)
+            outputs = outputs.div(fnorm.expand_as(outputs))
+            outputs = outputs.view(outputs.size(0),-1)
+        else:
+            fnorm = torch.norm(outputs, p=2, dim=1, keepdim=True)
+            outputs = outputs.div(fnorm.expand_as(outputs))
+
         features = torch.cat((features,outputs.data.cpu()), 0)
     return features
 

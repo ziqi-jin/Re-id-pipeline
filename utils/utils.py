@@ -60,20 +60,37 @@ def get_optimizer(cfg, model):
     '''
     optimizer = None
     if cfg.TRAIN.OPTIMIZER == 'sgd':
-        ignored_params = list(map(id, model.module.classifier.parameters()))
-        base_params = filter(lambda p: id(p) not in ignored_params, model.module.parameters())
-        optimizer = optim.SGD([
-            {'params': base_params, 'lr': 0.1 * cfg.TRAIN.LR},
-            {'params': model.module.classifier.parameters(), 'lr': cfg.TRAIN.LR}
-        ], weight_decay=5e-4, momentum=0.9, nesterov=True)
-        # optimizer = optim.SGD(
-        #     #model.parameters(),
-        #     filter(lambda p: p.requires_grad, model.parameters()),
-        #     lr=cfg.TRAIN.LR,
-        #     momentum=cfg.TRAIN.MOMENTUM,
-        #     weight_decay=cfg.TRAIN.WD,
-        #     nesterov=cfg.TRAIN.NESTEROV
-        # )
+        if not cfg.MODEL.PCB:
+            ignored_params = list(map(id, model.module.classifier.parameters() ))
+            base_params = filter(lambda p: id(p) not in ignored_params, model.module.parameters())
+            optimizer = optim.SGD([
+                    {'params': base_params, 'lr': 0.1*cfg.TRAIN.LR},
+                    {'params': model.module.classifier.parameters(), 'lr': cfg.TRAIN.LR}
+                ], weight_decay=5e-4, momentum=0.9, nesterov=True)
+        else:
+            ignored_params = list(map(id, model.module.model.fc.parameters() ))
+            ignored_params += (list(map(id, model.module.classifier0.parameters() )) 
+                            +list(map(id, model.module.classifier1.parameters() ))
+                            +list(map(id, model.module.classifier2.parameters() ))
+                            +list(map(id, model.module.classifier3.parameters() ))
+                            +list(map(id, model.module.classifier4.parameters() ))
+                            +list(map(id, model.module.classifier5.parameters() ))
+                            #+list(map(id, model.classifier6.parameters() ))
+                            #+list(map(id, model.classifier7.parameters() ))
+                            )
+            base_params = filter(lambda p: id(p) not in ignored_params, model.parameters())
+            optimizer = optim.SGD([
+                    {'params': base_params, 'lr': 0.1*cfg.TRAIN.LR},
+                    {'params': model.module.model.fc.parameters(), 'lr': cfg.TRAIN.LR},
+                    {'params': model.module.classifier0.parameters(), 'lr': cfg.TRAIN.LR},
+                    {'params': model.module.classifier1.parameters(), 'lr': cfg.TRAIN.LR},
+                    {'params': model.module.classifier2.parameters(), 'lr': cfg.TRAIN.LR},
+                    {'params': model.module.classifier3.parameters(), 'lr': cfg.TRAIN.LR},
+                    {'params': model.module.classifier4.parameters(), 'lr': cfg.TRAIN.LR},
+                    {'params': model.module.classifier5.parameters(), 'lr': cfg.TRAIN.LR},
+                    #{'params': model.classifier6.parameters(), 'lr': 0.01},
+                    #{'params': model.classifier7.parameters(), 'lr': 0.01}
+                ], weight_decay=5e-4, momentum=0.9, nesterov=True)
     elif cfg.TRAIN.OPTIMIZER == 'adam':
         optimizer = optim.Adam(
             #model.parameters(),
@@ -107,21 +124,34 @@ def get_all_about_data(config):
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
     #################################################
-    transform_train_list = [
-        # transforms.RandomResizedCrop(size=128, scale=(0.75,1.0), ratio=(0.75,1.3333), interpolation=3), #Image.BICUBIC)
-        transforms.Resize((256, 128), interpolation=3),
-        transforms.Pad(10),
-        transforms.RandomCrop((256, 128)),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ]
+    if config.MODEL.PCB:
+        transform_train_list = [
+            transforms.Resize((384,192), interpolation=3),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+            ]
+        transform_val_list = [
+            transforms.Resize(size=(384,192),interpolation=3), #Image.BICUBIC
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+            ]
+    else :
+        transform_train_list = [
+            # transforms.RandomResizedCrop(size=128, scale=(0.75,1.0), ratio=(0.75,1.3333), interpolation=3), #Image.BICUBIC)
+            transforms.Resize((256, 128), interpolation=3),
+            transforms.Pad(10),
+            transforms.RandomCrop((256, 128)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]
 
-    transform_val_list = [
-        transforms.Resize(size=(256, 128), interpolation=3),  # Image.BICUBIC
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ]
+        transform_val_list = [
+            transforms.Resize(size=(256, 128), interpolation=3),  # Image.BICUBIC
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]
     ###########################################
     train_dataset = datasets.ImageFolder(
         traindir,

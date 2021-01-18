@@ -4,7 +4,7 @@ import pprint
 import shutil
 import sys
 from utils.utils import get_all_about_data
-from models.models import ft_net
+from models.models import ft_net,PCB
 import torch
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
@@ -75,12 +75,17 @@ def main():
     #identify a model
     # model = eval('models.' + config.MODEL.NAME + '.get_cls_net')(
     #     config)
-    model = ft_net(751)
-
+    if config.MODEL.PCB:
+        model = PCB(751)
+        print('you are using pcb')
+    else:
+        model = ft_net(751)
+        print('you are using resnet')
     #can be deleted,i guess it shows the structure of model
     dump_input = torch.rand(
-        (1, 3, config.MODEL.IMAGE_SIZE[1], config.MODEL.IMAGE_SIZE[0])
+        (2, 3, config.MODEL.IMAGE_SIZE[1], config.MODEL.IMAGE_SIZE[0])
     )
+    print('dump input ',type(dump_input))
     logger.info(get_model_summary(model, dump_input))
     print('get model summary above')
 
@@ -148,14 +153,9 @@ def main():
         train(config, train_loader, model, criterion, optimizer, epoch,
               final_output_dir, tb_log_dir, writer_dict)
         lr_scheduler.step()
-
-        # evaluate on validation set
         # perf_indicator = validate(config, valid_loader, model, criterion,
         #                           final_output_dir, tb_log_dir, writer_dict)
-
-        perf_indicator = evaluate(model,query_loader,gallery_loader,query_cam,
-                                  query_label,gallery_cam,gallery_label)
-
+        perf_indicator = evaluate(config,model,query_loader,gallery_loader,query_cam,query_label,gallery_cam,gallery_label)
         if perf_indicator > best_perf:
             best_perf = perf_indicator
             best_model = True
@@ -172,6 +172,31 @@ def main():
             'perf': perf_indicator,
             'optimizer': optimizer.state_dict(),
         }, best_model, final_output_dir, filename='checkpoint.pth.tar')
+
+
+        # evaluate on validation set
+        # perf_indicator = validate(config, valid_loader, model, criterion,
+        #                           final_output_dir, tb_log_dir, writer_dict)
+        # if epoch%config.TEST.TEST_GAP == 0:
+        #     perf_indicator = evaluate(model,query_loader,gallery_loader,query_cam,
+        #                               query_label,gallery_cam,gallery_label)
+        #
+        #     if perf_indicator > best_perf:
+        #         best_perf = perf_indicator
+        #         best_model = True
+        #     else:
+        #         best_model = False
+        #
+        #     logger.info('=> saving checkpoint to {}'.format(final_output_dir))
+        #     #if the code is terminted , this saved checkpoints can work
+        #     save_checkpoint({
+        #         'epoch': epoch + 1,
+        #         'model': config.MODEL.NAME,
+        #         # 'state_dict': model.state_dict(),
+        #         'state_dict': model.module.state_dict(),
+        #         'perf': perf_indicator,
+        #         'optimizer': optimizer.state_dict(),
+        #     }, best_model, final_output_dir, filename='checkpoint.pth.tar')
 
     final_model_state_file = os.path.join(final_output_dir,
                                           'final_state.pth.tar')
